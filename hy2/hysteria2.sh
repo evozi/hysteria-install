@@ -1,5 +1,10 @@
 #!/bin/bash
 
+#
+# Hysteria one-click installation script
+# https://github.com/evozi/hysteria-install
+#
+
 export LANG=en_US.UTF-8
 
 SNI_URL="www.bing.com"
@@ -23,12 +28,12 @@ yellow(){
 }
 
 
-REGEX=("debian" "ubuntu" "centos|red hat|kernel|oracle linux|alma|rocky" "'amazon linux'" "fedora")
-RELEASE=("Debian" "Ubuntu" "CentOS" "CentOS" "Fedora")
-PACKAGE_UPDATE=("apt-get update" "apt-get update" "yum -y update" "yum -y update" "yum -y update")
-PACKAGE_INSTALL=("apt -y install" "apt -y install" "yum -y install" "yum -y install" "yum -y install")
-PACKAGE_REMOVE=("apt -y remove" "apt -y remove" "yum -y remove" "yum -y remove" "yum -y remove")
-PACKAGE_UNINSTALL=("apt -y autoremove" "apt -y autoremove" "yum -y autoremove" "yum -y autoremove" "yum -y autoremove")
+REGEX=("debian" "ubuntu" "centos|red hat|kernel|oracle linux|alma|rocky" "'amazon linux'" "fedora" "alpine")
+RELEASE=("Debian" "Ubuntu" "CentOS" "CentOS" "Fedora" "Alpine")
+PACKAGE_UPDATE=("apt-get update" "apt-get update" "yum -y update" "yum -y update" "yum -y update" "apk update -f")
+PACKAGE_INSTALL=("apt -y install" "apt -y install" "yum -y install" "yum -y install" "yum -y install" "apk add -f")
+PACKAGE_REMOVE=("apt -y remove" "apt -y remove" "yum -y remove" "yum -y remove" "yum -y remove" "apk del -f")
+PACKAGE_UNINSTALL=("apt -y autoremove" "apt -y autoremove" "yum -y autoremove" "yum -y autoremove" "yum -y autoremove" "apk del -f")
 
 [[ $EUID -ne 0 ]] && red "Note: Please run the script under the root user" && exit 1
 
@@ -173,7 +178,7 @@ inst_port(){
 inst_jump(){
     green "The Hysteria 2 port usage mode is as follows:"
     echo ""
-    echo -e " ${GREEN}1.${PLAIN} single port ${YELLOW}（default）${PLAIN}"
+    echo -e " ${GREEN}1.${PLAIN} single port ${YELLOW}(default)${PLAIN}"
     echo -e " ${GREEN}2.${PLAIN} port hopping"
     echo ""
     read -rp "Please enter options [1-2]: " jumpInput
@@ -380,12 +385,12 @@ uninstallHysteria(){
     green "Hysteria 2 has been completely uninstalled!  "
 }
 
-starthysteria(){
+startHysteria(){
     systemctl start hysteria-server
     systemctl enable hysteria-server >/dev/null 2>&1
 }
 
-stophysteria(){
+stopHysteria(){
     systemctl stop hysteria-server
     systemctl disable hysteria-server >/dev/null 2>&1
 }
@@ -399,9 +404,9 @@ switchHysteria(){
     echo ""
     read -rp "Please enter options [0-3]: " switchInput
     case $switchInput in
-        1 ) starthysteria ;;
-        2 ) stophysteria ;;
-        3 ) stophysteria && starthysteria ;;
+        1 ) startHysteria ;;
+        2 ) stopHysteria ;;
+        3 ) stopHysteria && startHysteria ;;
         * ) exit 1 ;;
     esac
 }
@@ -425,7 +430,7 @@ changeport(){
     sed -i "2s#$oldport#$port#g" /root/hy/hy-client.json
     sed -i "s#$oldport#$port#g" /root/hy/url.txt
 
-    stophysteria && starthysteria
+    stopHysteria && startHysteria
 
     green "Hysteria 2 port successfully modified to: $port"
     yellow "Please manually update the client configuration"
@@ -449,7 +454,7 @@ changepasswd(){
     sed -i "s#$oldobfs#$passwd#g" /root/hy/url.txt
     
 
-    stophysteria && starthysteria
+    stopHysteria && startHysteria
 
     green "Hysteria 2 server password successfully changed to: $passwd"
     yellow "Please manually update the client configuration"
@@ -468,7 +473,7 @@ change_cert(){
     sed -i "6s/$old_hydomain/$hy_domain/g" /root/hy/hy-client.yaml
     sed -i "5s/$old_hydomain/$hy_domain/g" /root/hy/hy-client.json
 
-    stophysteria && starthysteria
+    stopHysteria && startHysteria
 
     green "Hysteria 2 server certificate type successfully modified"
     yellow "Please manually update the client configuration"
@@ -481,7 +486,7 @@ changeproxysite(){
 
     sed -i "s#$oldproxysite#$proxysite#g" /etc/hysteria/config.yaml
 
-    stophysteria && starthysteria
+    stopHysteria && startHysteria
 
     green "Hysteria 2 server masquerading website has been successfully modified to: $proxysite"
 }
@@ -521,10 +526,14 @@ updateCore(){
     rm -f install_server.sh
 }
 
+showLog(){
+    journalctl --no-pager -e -u hysteria-server.service
+}
+
 menu() {
     clear
     echo "###############################################################################"
-    echo -e "#             ⚡ ${YELLOW}Hysteria || one-click installation script || ${PLAIN}                 #"
+    echo -e "#             ⚡⚡ ${YELLOW}Hysteria || one-click installation script || ${PLAIN}                #"
     echo -e "# ${RED}https://github.com/evozi/hysteria-install${PLAIN}                                   #"
     echo -e "# ${GREEN}Maintained By ${PLAIN}: Evozi                                                       #"
     echo -e "# ${GREEN}By ${PLAIN}: Author: Misaka-blog | Forked: Ptechgithub                              #"                                     #"
@@ -541,6 +550,7 @@ menu() {
     echo -e " ${GREEN}5.${PLAIN} Show configuration file"
     echo " -------------"
     echo -e " ${GREEN}6.${PLAIN} Update Hysteria 2 core"
+    echo -e " ${GREEN}7.${PLAIN} Show Hysteria 2 log"
     echo " -------------"
     echo -e " ${GREEN}0.${PLAIN} Exit script"
     echo ""
@@ -552,6 +562,7 @@ menu() {
         4 ) changeConf ;;
         5 ) showConf ;;
         6 ) updateCore ;;
+        7 ) showLog ;;
         * ) exit 1 ;;
     esac
 }

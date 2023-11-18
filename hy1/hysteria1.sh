@@ -61,6 +61,10 @@ realip(){
     ip=$(curl -s4m8 ip.sb -k) || ip=$(curl -s6m8 ip.sb -k)
 }
 
+realdomain(){
+    hy_domain=$(curl -s4m8 ip.sb -k) || hy_domain=$(curl -s6m8 ip.sb -k)
+}
+
 inst_cert(){
     green "Methods of applying certificate ："
     echo ""
@@ -144,7 +148,7 @@ inst_cert(){
         yellow "Certificate domain name: $domain"
         hy_domain=$domain
     else
-        green "will use $SNI_URL self-signed certificates for Hysteria 2"
+        green "will use $SNI_URL self-signed certificates for Hysteria"
 
         cert_path="/etc/hysteria/cert.crt"
         key_path="/etc/hysteria/private.key"
@@ -231,7 +235,7 @@ inst_pwd(){
 inst_speed(){
     read -p "Enter your download speed (Mbps): " down_mbps
     read -p "Enter your upload speed (Mbps): " up_mbps
-    read -p "Enter your SNI (Default: $SNI_URL) : " sni
+    read -p "Enter your SNI (Default: $SNI_URL) : " domain
 }
 
 inst_resolv(){
@@ -307,17 +311,17 @@ EOF
     fi
 
     # Determine whether the certificate is self-signed, if so, use the IP as the server inbound
-    if [[ $ip == $SNI_URL ]]; then
+    if [[ $hy_domain == $SNI_URL ]]; then
         WARPv4Status=$(curl -s4m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
         WARPv6Status=$(curl -s6m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
         if [[ $WARPv4Status =~ on|plus ]] || [[ $WARPv6Status =~ on|plus ]]; then
             wg-quick down wgcf >/dev/null 2>&1
             systemctl stop warp-go >/dev/null 2>&1
-            realip
+            realdomain
             wg-quick up wgcf >/dev/null 2>&1
             systemctl start warp-go >/dev/null 2>&1
         else
-            realip
+            realdomain
         fi
     fi
 
@@ -326,7 +330,7 @@ EOF
     cat <<EOF > /root/hy/hy-client.json
 {
     "protocol": "$protocol",
-    "server": "$last_ip:$last_port",
+    "server": "$hy_domain:$last_port",
     "server_name": "$domain",
     "alpn": "h3",
     "up_mbps": "$up_mbps",
@@ -362,7 +366,7 @@ dns:
 proxies:
   - name: HttpInjector-Hysteria1
     type: hysteria
-    server: $ip
+    server: $hy_domain
     port: $port
     auth_str: $auth_pwd
     alpn:
@@ -377,16 +381,16 @@ proxy-groups:
     type: select
     proxies:
       - HttpInjector-Hysteria1
-      
+
 rules:
   - DOMAIN-SUFFIX,speedtest.net,DIRECT
   - DOMAIN-SUFFIX,fast.com,DIRECT
-  - DOMAIN-SUFFIX,speed.cloudflare.com,DIRECT  
+  - DOMAIN-SUFFIX,speed.cloudflare.com,DIRECT
   - DOMAIN-SUFFIX,ir,DIRECT
   - GEOIP,IR,DIRECT
   - MATCH,Proxy
 EOF
-    url="hysteria://$last_ip:$last_port?protocol=$protocol&upmbps=$up_mbps&downmbps=$down_mbps&auth=$auth_pwd&peer=$domain&insecure=1&alpn=h3#HttpInjector-Hysteria1"
+    url="hysteria://$hy_domain:$last_port?protocol=$protocol&upmbps=$up_mbps&downmbps=$down_mbps&auth=$auth_pwd&peer=$domain&insecure=1&alpn=h3#HttpInjector-Hysteria1"
     echo $url > /root/hy/url.txt
 
     systemctl daemon-reload
@@ -404,7 +408,7 @@ EOF
     #cat /root/hy/hy-client.json
     #yellow "Clash Meta client configuration file saved to /root/hy/clash-meta.yaml"
     green "$APP_IMPORT_GUIDE"
-    yellow "Hysteria 2 config URI is as follows and saved to /root/hy/url.txt"
+    yellow "Hysteria config URI is as follows and saved to /root/hy/url.txt"
     red $(cat /root/hy/url.txt)
 }
 
@@ -452,7 +456,7 @@ change_cert(){
     old_hyym=$(cat /root/hy/hy-client.json | grep server | sed -n 1p | awk -F " " '{print $2}' | sed "s/\"//g" | sed "s/,//g" | awk -F ":" '{print $1}')
     old_domain=$(cat /root/hy/hy-client.json | grep server_name | awk -F " " '{print $2}' | sed "s/\"//g" | sed "s/,//g")
     inst_cert
-    if [[ $ip == $SNI_URL ]]; then
+    if [[ $hy_domain == $SNI_URL ]]; then
         WARPv4Status=$(curl -s4m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
         WARPv6Status=$(curl -s6m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
         if [[ $WARPv4Status =~ on|plus ]] || [[ $WARPv6Status =~ on|plus ]]; then
@@ -467,9 +471,9 @@ change_cert(){
     fi
     sed -i "s|$old_cert|$cert_path|" /etc/hysteria/config.json
     sed -i "s|$old_key|$key_path|" /etc/hysteria/config.json
-    sed -i "s|$old_hyym|$ip|" /root/hy/hy-client.json
-    sed -i "s|$old_hyym|$ip|" /root/hy/clash-meta.yaml
-    sed -i "s|$old_hyym|$ip|" /root/hy/url.txt
+    sed -i "s|$old_hyym|$hy_domain|" /root/hy/hy-client.json
+    sed -i "s|$old_hyym|$hy_domain|" /root/hy/clash-meta.yaml
+    sed -i "s|$old_hyym|$hy_domain|" /root/hy/url.txt
     stopHysteria && startHysteria
     green "The configuration is modified successfully, please re-import the client configuration file"
 }

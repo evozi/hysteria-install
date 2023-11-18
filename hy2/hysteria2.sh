@@ -554,7 +554,7 @@ menu() {
     echo " -------------"
     echo -e " ${GREEN}0.${PLAIN} Exit script"
     echo ""
-    read -rp "Please enter options [0-5]: " menuInput
+    read -rp "Please enter options [0-7]: " menuInput
     case $menuInput in
         1 ) installHysteria ;;
         2 ) uninstallHysteria ;;

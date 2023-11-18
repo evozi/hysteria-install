@@ -270,7 +270,7 @@ installHysteria(){
     bash install_server.sh
     rm -f install_server.sh
 
-    if [[ -f "/usr/local/bin/hysteria" ]]; then
+    if [[ -f "/usr/local/bin/hysteria1" ]]; then
         green "Hysteria installed successfully!  "
     else
         red "Hysteria installation failed!  "
@@ -401,13 +401,13 @@ EOF
     echo $url > /root/hy/url.txt
 
     systemctl daemon-reload
-    systemctl enable hysteria-server
-    systemctl start hysteria-server
+    systemctl enable hysteria1-server
+    systemctl start hysteria1-server
 
-    if [[ -n $(systemctl status hysteria-server 2>/dev/null | grep -w active) && -f '/etc/hysteria/config.json' ]]; then
+    if [[ -n $(systemctl status hysteria1-server 2>/dev/null | grep -w active) && -f '/etc/hysteria/config.json' ]]; then
         green "Hysteria service started successfully"
     else
-        red "The Hysteria-server service failed to start, please run systemctl status hysteria-server to view the service status and give feedback, the script exits" && exit 1
+        red "The Hysteria1-server service failed to start, please run systemctl status hysteria1-server to view the service status and give feedback, the script exits" && exit 1
     fi
     red "======================================================================================"
     green "Hysteria proxy service installation complete"
@@ -420,25 +420,25 @@ EOF
 }
 
 uninstallHysteria(){
-    systemctl stop hysteria-server.service >/dev/null 2>&1
-    systemctl disable hysteria-server.service >/dev/null 2>&1
-    rm -f /lib/systemd/system/hysteria-server.service /lib/systemd/system/hysteria-server@.service
-    rm -rf /usr/local/bin/hysteria /etc/hysteria /root/hy /root/hysteria.sh
-    sed -i '/systemctl restart hysteria-server/d' /etc/crontab
+    systemctl stop hysteria1-server.service >/dev/null 2>&1
+    systemctl disable hysteria1-server.service >/dev/null 2>&1
+    rm -f /etc/systemd/system/hysteria1-server.service /etc/systemd/system/hysteria1-server@.service
+    rm -rf /usr/local/bin/hysteria1 /etc/hysteria /root/hy /root/hysteria1.sh
+    sed -i '/systemctl restart hysteria1-server/d' /etc/crontab
     iptables -t nat -F PREROUTING >/dev/null 2>&1
     netfilter-persistent save >/dev/null 2>&1
 
-    green "Hysteria has been completely uninstalled!  "
+    green "Hysteria 1 has been completely uninstalled!  "
 }
 
 startHysteria(){
-    systemctl start hysteria-server
-    systemctl enable hysteria-server >/dev/null 2>&1
+    systemctl start hysteria1-server
+    systemctl enable hysteria1-server >/dev/null 2>&1
 }
 
 stopHysteria(){
-    systemctl stop hysteria-server
-    systemctl disable hysteria-server >/dev/null 2>&1
+    systemctl stop hysteria1-server
+    systemctl disable hysteria1-server >/dev/null 2>&1
 }
 
 switchHysteria(){
@@ -490,7 +490,7 @@ change_cert(){
     sed -i "s|$old_sni_host|$sni_host|" /root/hy/url.txt
 
     stopHysteria && startHysteria
-    
+
     green "The configuration is modified successfully, please re-import the client configuration file"
 }
 
@@ -581,7 +581,7 @@ updateCore(){
 }
 
 showLog(){
-    journalctl --no-pager -e -u hysteria-server.service
+    journalctl --no-pager -e -u hysteria1-server.service
 }
 
 menu() {

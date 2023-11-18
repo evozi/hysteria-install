@@ -383,7 +383,7 @@ uninstallHysteria(){
     systemctl stop hysteria-server.service >/dev/null 2>&1
     systemctl disable hysteria-server.service >/dev/null 2>&1
     rm -f /lib/systemd/system/hysteria-server.service /lib/systemd/system/hysteria-server@.service
-    rm -rf /usr/local/bin/hysteria /etc/hysteria /root/hy /root/hysteria.sh
+    rm -rf /usr/local/bin/hysteria /etc/hysteria /root/hy /root/hysteria2.sh
     iptables -t nat -F PREROUTING >/dev/null 2>&1
     netfilter-persistent save >/dev/null 2>&1
 

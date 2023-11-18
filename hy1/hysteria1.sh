@@ -581,7 +581,8 @@ updateCore(){
 }
 
 showLog(){
-    journalctl --no-pager -e -u hysteria1-server.service
+    echo -e "${GREEN}Hysteria log, Ctrl+C to exit:${PLAIN}"
+    journalctl --no-pager -e -u hysteria1-server.service --output cat -f
 }
 
 menu() {

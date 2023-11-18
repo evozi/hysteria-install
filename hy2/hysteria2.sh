@@ -7,7 +7,7 @@
 
 export LANG=en_US.UTF-8
 
-SNI_URL="www.bing.com"
+DEFAULT_SNI="www.bing.com"
 MASQUERADE_URL="speedtest.net" # without https://
 
 RED="\033[31m"
@@ -65,7 +65,7 @@ realip(){
 inst_cert(){
     green "Methods of applying certificate ："
     echo ""
-    echo -e " ${GREEN}1.${PLAIN} Self-signed certificate (using $SNI_URL) ${YELLOW} (default) ${PLAIN}"
+    echo -e " ${GREEN}1.${PLAIN} Self-signed certificate ${YELLOW} (default) ${PLAIN}"
     echo -e " ${GREEN}2.${PLAIN} ACME script auto-apply"
     echo -e " ${GREEN}3.${PLAIN} Custom Certificate Path"
     echo ""
@@ -77,9 +77,9 @@ inst_cert(){
         chmod -R 777 /root # Let the Hysteria main program access the /root directory
 
         if [[ -f /root/cert.crt && -f /root/private.key ]] && [[ -s /root/cert.crt && -s /root/private.key ]] && [[ -f /root/ca.log ]]; then
-            domain=$(cat /root/ca.log)
-            green "Legacy domain name detected: certificate for $domain, applying"
-            hy_domain=$domain
+            sni_host=$(cat /root/ca.log)
+            green "Legacy domain name detected: certificate for $sni_host, applying"
+            hy_host=$sni_host
         else
             WARPv4Status=$(curl -s4m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
             WARPv6Status=$(curl -s6m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
@@ -93,11 +93,11 @@ inst_cert(){
                 realip
             fi
             
-            read -p "Please enter the domain name to apply for a certificate：" domain
-            [[ -z $domain ]] && red "No domain name entered, unable to perform operation！" && exit 1
-            green "Domain name entered：$domain" && sleep 1
-            domainIP=$(curl -sm8 ipget.net/?ip="${domain}")
-            if [[ $domainIP == $ip ]]; then
+            read -p "Please enter the domain name to apply for a certificate：" sni_host
+            [[ -z $sni_host ]] && red "No domain name entered, unable to perform operation！" && exit 1
+            green "Domain name entered：$sni_host" && sleep 1
+            domainIP=$(curl -sm8 ipget.net/?ip="${sni_host}")
+            if [[ $sni_hostIP == $ip ]]; then
                 ${PACKAGE_INSTALL[int]} curl wget sudo socat openssl
                 if [[ $SYSTEM == "CentOS" ]]; then
                     ${PACKAGE_INSTALL[int]} cronie
@@ -113,19 +113,19 @@ inst_cert(){
                 bash ~/.acme.sh/acme.sh --upgrade --auto-upgrade
                 bash ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
                 if [[ -n $(echo $ip | grep ":") ]]; then
-                    bash ~/.acme.sh/acme.sh --issue -d ${domain} --standalone -k ec-256 --listen-v6 --insecure
+                    bash ~/.acme.sh/acme.sh --issue -d ${sni_host} --standalone -k ec-256 --listen-v6 --insecure
                 else
-                    bash ~/.acme.sh/acme.sh --issue -d ${domain} --standalone -k ec-256 --insecure
+                    bash ~/.acme.sh/acme.sh --issue -d ${sni_host} --standalone -k ec-256 --insecure
                 fi
-                bash ~/.acme.sh/acme.sh --install-cert -d ${domain} --key-file /root/private.key --fullchain-file /root/cert.crt --ecc
+                bash ~/.acme.sh/acme.sh --install-cert -d ${sni_host} --key-file /root/private.key --fullchain-file /root/cert.crt --ecc
                 if [[ -f /root/cert.crt && -f /root/private.key ]] && [[ -s /root/cert.crt && -s /root/private.key ]]; then
-                    echo $domain > /root/ca.log
+                    echo $sni_host > /root/ca.log
                     sed -i '/--cron/d' /etc/crontab >/dev/null 2>&1
                     echo "0 0 * * * root bash /root/.acme.sh/acme.sh --cron -f >/dev/null 2>&1" >> /etc/crontab
                     green "Successful! The certificate (cer.crt) and private key (private.key) files applied by the script have been saved to the /root folder"
                     yellow "The certificate crt file path is as follows: /root/cert.crt"
                     yellow "The private key file path is as follows: /root/private.key"
-                    hy_domain=$domain
+                    hy_host=$sni_host
                 fi
             else
                 red "The IP resolved by the current domain name does not match the real IP used by the current VPS"
@@ -141,20 +141,20 @@ inst_cert(){
         yellow "The path of the public key file crt: $cert_path"
         read -p "Please enter the path of the key file key: " key_path
         yellow "The path of the key file key: $key_path"
-        read -p "Please enter the domain name of the certificate: " domain
-        yellow "Certificate domain name: $domain"
-        hy_domain=$domain
+        read -p "Please enter the domain name of the certificate: " sni_host
+        yellow "Certificate domain name: $sni_host"
+        hy_host=$sni_host
     else
-        green "will use $SNI_URL self-signed certificates for Hysteria 2"
+        inst_sni
+        green "will use $sni_host self-signed certificates for Hysteria 2"
 
         cert_path="/etc/hysteria/cert.crt"
         key_path="/etc/hysteria/private.key"
         openssl ecparam -genkey -name prime256v1 -out /etc/hysteria/private.key
-        openssl req -new -x509 -days 36500 -key /etc/hysteria/private.key -out /etc/hysteria/cert.crt -subj "/CN=$SNI_URL"
+        openssl req -new -x509 -days 36500 -key /etc/hysteria/private.key -out /etc/hysteria/cert.crt -subj "/CN=$sni_host"
         chmod 777 /etc/hysteria/cert.crt
         chmod 777 /etc/hysteria/private.key
-        hy_domain=$SNI_URL
-        domain=$SNI_URL
+        hy_host=$sni_host
     fi
 }
 
@@ -206,6 +206,11 @@ inst_pwd(){
     read -p "Set Hysteria2 password (Enter for random password) :  " auth_pwd
     [[ -z $auth_pwd ]] && auth_pwd=$(date +%s%N | md5sum | cut -c 1-8)
     yellow "The password used on the Hysteria2 server is: $auth_pwd"
+}
+
+inst_sni(){
+    read -p "Enter your SNI (Default: $DEFAULT_SNI) : " sni_host
+    sni_host="${sni_host:=$DEFAULT_SNI}"
 }
 
 inst_site(){
@@ -294,14 +299,14 @@ EOF
         last_ip=$ip
     fi
 
-    mkdir /root/hy
+    mkdir /root/hy >/dev/null 2>&1
     cat << EOF > /root/hy/hy-client.yaml
 server: $ip:$last_port
 
 auth: $auth_pwd
 
 tls:
-  sni: $hy_domain
+  sni: $hy_host
   insecure: true
 
 obfs: $auth_pwd
@@ -319,14 +324,14 @@ socks5:
 
 transport:
   udp:
-    hopInterval: 30s 
+    hopInterval: 30s
 EOF
     cat << EOF > /root/hy/hy-client.json
 {
   "server": "$ip:$last_port",
   "auth": "$auth_pwd",
   "tls": {
-    "sni": "$hy_domain",
+    "sni": "$hy_host",
     "insecure": true
   },
   "obfs": "$auth_pwd",
@@ -348,9 +353,9 @@ EOF
 }
 EOF
 
-    url="hy2://$auth_pwd@$ip:$last_port/?insecure=1&sni=$hy_domain&obfs=salamander&obfs-password=$auth_pwd#HttpInjector-hysteria2"
+    url="hy2://$auth_pwd@$ip:$last_port/?insecure=1&sni=$hy_host&obfs=salamander&obfs-password=$auth_pwd#HttpInjector-hysteria2"
     echo $url > /root/hy/url.txt
-    nohopurl="hy2://$auth_pwd@$ip:$port/?insecure=1&sni=$hy_domain&obfs=salamander&obfs-password=$auth_pwd#HttpInjector-hysteria2"
+    nohopurl="hy2://$auth_pwd@$ip:$port/?insecure=1&sni=$hy_host&obfs=salamander&obfs-password=$auth_pwd#HttpInjector-hysteria2"
     echo $nohopurl > /root/hy/url-nohop.txt
 
     systemctl daemon-reload
@@ -464,14 +469,16 @@ changepasswd(){
 change_cert(){
     old_cert=$(cat /etc/hysteria/config.yaml | grep cert | awk -F " " '{print $2}')
     old_key=$(cat /etc/hysteria/config.yaml | grep key | awk -F " " '{print $2}')
-    old_hydomain=$(cat /root/hy/hy-client.yaml | grep sni | awk '{print $2}')
+    old_sni_host=$(cat /root/hy/hy-client.yaml | grep sni | awk '{print $2}')
 
     inst_cert
 
     sed -i "s!$old_cert!$cert_path!g" /etc/hysteria/config.yaml
     sed -i "s!$old_key!$key_path!g" /etc/hysteria/config.yaml
-    sed -i "6s/$old_hydomain/$hy_domain/g" /root/hy/hy-client.yaml
-    sed -i "5s/$old_hydomain/$hy_domain/g" /root/hy/hy-client.json
+    sed -i "6s/$old_sni_host/$sni_host/g" /root/hy/hy-client.yaml
+    sed -i "5s/$old_sni_host/$sni_host/g" /root/hy/hy-client.json
+    sed -i "s|$old_sni_host|$sni_host|" /root/hy/url.txt
+    sed -i "s|$old_sni_host|$sni_host|" /root/hy/url-nohop.txt
 
     stopHysteria && startHysteria
 

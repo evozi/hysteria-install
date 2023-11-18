@@ -7,7 +7,7 @@
 
 export LANG=en_US.UTF-8
 
-SNI_URL="www.bing.com"
+DEFAULT_SNI="www.bing.com"
 
 RED="\033[31m"
 GREEN="\033[32m"
@@ -57,18 +57,18 @@ fi
 
 APP_IMPORT_GUIDE="Open 'HTTP Injector' app -> Tunnel Type set 'Hysteria' -> Settings -> Hysteria -> Paste Hysteria config URI to import"
 
-realip(){
+realIp(){
     ip=$(curl -s4m8 ip.sb -k) || ip=$(curl -s6m8 ip.sb -k)
 }
 
-realdomain(){
-    hy_domain=$(curl -s4m8 ip.sb -k) || hy_domain=$(curl -s6m8 ip.sb -k)
+realHost(){
+    hy_host=$(curl -s4m8 ip.sb -k) || hy_host=$(curl -s6m8 ip.sb -k)
 }
 
 inst_cert(){
     green "Methods of applying certificate ："
     echo ""
-    echo -e " ${GREEN}1.${PLAIN} Self-signed certificate (using $SNI_URL) ${YELLOW} (default) ${PLAIN}"
+    echo -e " ${GREEN}1.${PLAIN} Self-signed certificate ${YELLOW} (default) ${PLAIN}"
     echo -e " ${GREEN}2.${PLAIN} ACME script auto-apply"
     echo -e " ${GREEN}3.${PLAIN} Custom Certificate Path"
     echo ""
@@ -80,26 +80,26 @@ inst_cert(){
         chmod -R 777 /root # Let the Hysteria main program access the /root directory
 
         if [[ -f /root/cert.crt && -f /root/private.key ]] && [[ -s /root/cert.crt && -s /root/private.key ]] && [[ -f /root/ca.log ]]; then
-            domain=$(cat /root/ca.log)
-            green "Legacy domain name detected: certificate for $domain, applying"
-            hy_domain=$domain
+            sni_host=$(cat /root/ca.log)
+            green "Legacy domain name detected: certificate for $sni_host, applying"
+            hy_host=$sni_host
         else
             WARPv4Status=$(curl -s4m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
             WARPv6Status=$(curl -s6m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
             if [[ $WARPv4Status =~ on|plus ]] || [[ $WARPv6Status =~ on|plus ]]; then
                 wg-quick down wgcf >/dev/null 2>&1
                 systemctl stop warp-go >/dev/null 2>&1
-                realip
+                realIp
                 wg-quick up wgcf >/dev/null 2>&1
                 systemctl start warp-go >/dev/null 2>&1
             else
-                realip
+                realIp
             fi
             
-            read -p "Please enter the domain name to apply for a certificate：" domain
-            [[ -z $domain ]] && red "No domain name entered, unable to perform operation！" && exit 1
-            green "Domain name entered：$domain" && sleep 1
-            domainIP=$(curl -sm8 ipget.net/?ip="${domain}")
+            read -p "Please enter the domain name to apply for a certificate：" sni_host
+            [[ -z $sni_host ]] && red "No domain name entered, unable to perform operation！" && exit 1
+            green "Domain name entered：$sni_host" && sleep 1
+            domainIP=$(curl -sm8 ipget.net/?ip="${sni_host}")
             if [[ $domainIP == $ip ]]; then
                 ${PACKAGE_INSTALL[int]} curl wget sudo socat openssl
                 if [[ $SYSTEM == "CentOS" ]]; then
@@ -116,19 +116,19 @@ inst_cert(){
                 bash ~/.acme.sh/acme.sh --upgrade --auto-upgrade
                 bash ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
                 if [[ -n $(echo $ip | grep ":") ]]; then
-                    bash ~/.acme.sh/acme.sh --issue -d ${domain} --standalone -k ec-256 --listen-v6 --insecure
+                    bash ~/.acme.sh/acme.sh --issue -d ${sni_host} --standalone -k ec-256 --listen-v6 --insecure
                 else
-                    bash ~/.acme.sh/acme.sh --issue -d ${domain} --standalone -k ec-256 --insecure
+                    bash ~/.acme.sh/acme.sh --issue -d ${sni_host} --standalone -k ec-256 --insecure
                 fi
-                bash ~/.acme.sh/acme.sh --install-cert -d ${domain} --key-file /root/private.key --fullchain-file /root/cert.crt --ecc
+                bash ~/.acme.sh/acme.sh --install-cert -d ${sni_host} --key-file /root/private.key --fullchain-file /root/cert.crt --ecc
                 if [[ -f /root/cert.crt && -f /root/private.key ]] && [[ -s /root/cert.crt && -s /root/private.key ]]; then
-                    echo $domain > /root/ca.log
+                    echo $sni_host > /root/ca.log
                     sed -i '/--cron/d' /etc/crontab >/dev/null 2>&1
                     echo "0 0 * * * root bash /root/.acme.sh/acme.sh --cron -f >/dev/null 2>&1" >> /etc/crontab
                     green "Successful! The certificate (cer.crt) and private key (private.key) files applied by the script have been saved to the /root folder"
                     yellow "The certificate crt file path is as follows: /root/cert.crt"
                     yellow "The private key file path is as follows: /root/private.key"
-                    hy_domain=$domain
+                    hy_host=$sni_host
                 fi
             else
                 red "The IP resolved by the current domain name does not match the real IP used by the current VPS"
@@ -144,20 +144,20 @@ inst_cert(){
         yellow "The path of the public key file crt: $cert_path"
         read -p "Please enter the path of the key file key: " key_path
         yellow "The path of the key file key: $key_path"
-        read -p "Please enter the domain name of the certificate: " domain
-        yellow "Certificate domain name: $domain"
-        hy_domain=$domain
+        read -p "Please enter the domain name of the certificate: " sni_host
+        yellow "Certificate domain name: $sni_host"
+        hy_host=$sni_host
     else
-        green "will use $SNI_URL self-signed certificates for Hysteria"
+        inst_sni
+        green "will use $sni_host self-signed certificates for Hysteria"
 
         cert_path="/etc/hysteria/cert.crt"
         key_path="/etc/hysteria/private.key"
         openssl ecparam -genkey -name prime256v1 -out /etc/hysteria/private.key
-        openssl req -new -x509 -days 36500 -key /etc/hysteria/private.key -out /etc/hysteria/cert.crt -subj "/CN=$SNI_URL"
+        openssl req -new -x509 -days 36500 -key /etc/hysteria/private.key -out /etc/hysteria/cert.crt -subj "/CN=$sni_host"
         chmod 777 /etc/hysteria/cert.crt
         chmod 777 /etc/hysteria/private.key
-        hy_domain=$SNI_URL
-        domain=$SNI_URL
+        hy_host=$sni_host
     fi
 }
 
@@ -170,7 +170,7 @@ inst_protocol(){
     echo ""
     read -rp "Please enter options [1-3]: " proInput
     if [[ $proInput == 2 ]]; then
-        protocol="wehcat-video"
+        protocol="wechat-video"
     elif [[ $proInput == 3 ]]; then
         protocol="faketcp"
     else
@@ -233,9 +233,15 @@ inst_pwd(){
 }
 
 inst_speed(){
-    read -p "Enter your download speed (Mbps): " down_mbps
-    read -p "Enter your upload speed (Mbps): " up_mbps
-    read -p "Enter your SNI (Default: $SNI_URL) : " domain
+    read -p "Enter your download speed (Mbps) (default: 100): " down_mbps
+    read -p "Enter your upload speed (Mbps) (default: 100): " up_mbps
+    down_mbps="${down_mbps:=100}"
+    up_mbps="${up_mbps:=100}"
+}
+
+inst_sni(){
+    read -p "Enter your SNI (Default: $DEFAULT_SNI) : " sni_host
+    sni_host="${sni_host:=$DEFAULT_SNI}"
 }
 
 inst_resolv(){
@@ -268,6 +274,7 @@ installHysteria(){
         green "Hysteria installed successfully!  "
     else
         red "Hysteria installation failed!  "
+        exit 1
     fi
 
     # Ask user for Hysteria configuration
@@ -311,17 +318,17 @@ EOF
     fi
 
     # Determine whether the certificate is self-signed, if so, use the IP as the server inbound
-    if [[ $hy_domain == $SNI_URL ]]; then
+    if [[ $hy_host == $sni_host ]]; then
         WARPv4Status=$(curl -s4m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
         WARPv6Status=$(curl -s6m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
         if [[ $WARPv4Status =~ on|plus ]] || [[ $WARPv6Status =~ on|plus ]]; then
             wg-quick down wgcf >/dev/null 2>&1
             systemctl stop warp-go >/dev/null 2>&1
-            realdomain
+            realHost
             wg-quick up wgcf >/dev/null 2>&1
             systemctl start warp-go >/dev/null 2>&1
         else
-            realdomain
+            realHost
         fi
     fi
 
@@ -330,8 +337,8 @@ EOF
     cat <<EOF > /root/hy/hy-client.json
 {
     "protocol": "$protocol",
-    "server": "$hy_domain:$last_port",
-    "server_name": "$domain",
+    "server": "$hy_host:$last_port",
+    "server_name": "$sni_host",
     "alpn": "h3",
     "up_mbps": "$up_mbps",
     "down_mbps": "$down_mbps",
@@ -366,7 +373,7 @@ dns:
 proxies:
   - name: HttpInjector-Hysteria1
     type: hysteria
-    server: $hy_domain
+    server: $hy_host
     port: $port
     auth_str: $auth_pwd
     alpn:
@@ -374,7 +381,7 @@ proxies:
     protocol: $protocol
     up: $up_mbps
     down: $down_mbps
-    sni: $domain
+    sni: $sni_host
     skip-cert-verify: true
 proxy-groups:
   - name: Proxy
@@ -390,7 +397,7 @@ rules:
   - GEOIP,IR,DIRECT
   - MATCH,Proxy
 EOF
-    url="hysteria://$hy_domain:$last_port?protocol=$protocol&upmbps=$up_mbps&downmbps=$down_mbps&auth=$auth_pwd&peer=$domain&insecure=1&alpn=h3#HttpInjector-Hysteria1"
+    url="hysteria://$hy_host:$last_port?protocol=$protocol&upmbps=$up_mbps&downmbps=$down_mbps&auth=$auth_pwd&peer=$sni_host&insecure=1&alpn=h3#HttpInjector-Hysteria1"
     echo $url > /root/hy/url.txt
 
     systemctl daemon-reload
@@ -453,28 +460,37 @@ switchHysteria(){
 change_cert(){
     old_cert=$(cat /etc/hysteria/config.json | grep cert | awk -F " " '{print $2}' | sed "s/\"//g" | sed "s/,//g")
     old_key=$(cat /etc/hysteria/config.json | grep key | awk -F " " '{print $2}' | sed "s/\"//g" | sed "s/,//g")
-    old_hyym=$(cat /root/hy/hy-client.json | grep server | sed -n 1p | awk -F " " '{print $2}' | sed "s/\"//g" | sed "s/,//g" | awk -F ":" '{print $1}')
-    old_domain=$(cat /root/hy/hy-client.json | grep server_name | awk -F " " '{print $2}' | sed "s/\"//g" | sed "s/,//g")
+    old_hy_host=$(cat /root/hy/hy-client.json | grep server\" | sed -n 1p | awk -F " " '{print $2}' | sed "s/\"//g" | sed "s/,//g" | awk -F ":" '{print $1}')
+    old_sni_host=$(cat /root/hy/hy-client.json | grep server_name | awk -F " " '{print $2}' | sed "s/\"//g" | sed "s/,//g")
     inst_cert
-    if [[ $hy_domain == $SNI_URL ]]; then
+    if [[ $hy_host == $sni_host ]]; then
         WARPv4Status=$(curl -s4m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
         WARPv6Status=$(curl -s6m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
         if [[ $WARPv4Status =~ on|plus ]] || [[ $WARPv6Status =~ on|plus ]]; then
             wg-quick down wgcf >/dev/null 2>&1
             systemctl stop warp-go >/dev/null 2>&1
-            realip
+            realIp
+            hy_host=$ip
             wg-quick up wgcf >/dev/null 2>&1
             systemctl start warp-go >/dev/null 2>&1
         else
-            realip
+            realIp
+            hy_host=$ip
         fi
     fi
     sed -i "s|$old_cert|$cert_path|" /etc/hysteria/config.json
     sed -i "s|$old_key|$key_path|" /etc/hysteria/config.json
-    sed -i "s|$old_hyym|$hy_domain|" /root/hy/hy-client.json
-    sed -i "s|$old_hyym|$hy_domain|" /root/hy/clash-meta.yaml
-    sed -i "s|$old_hyym|$hy_domain|" /root/hy/url.txt
+
+    sed -i "s|$old_hy_host|$hy_host|" /root/hy/hy-client.json
+    sed -i "s|$old_hy_host|$hy_host|" /root/hy/clash-meta.yaml
+    sed -i "s|$old_hy_host|$hy_host|" /root/hy/url.txt
+
+    sed -i "s|$old_sni_host|$sni_host|" /root/hy/hy-client.json
+    sed -i "s|$old_sni_host|$sni_host|" /root/hy/clash-meta.yaml
+    sed -i "s|$old_sni_host|$sni_host|" /root/hy/url.txt
+
     stopHysteria && startHysteria
+    
     green "The configuration is modified successfully, please re-import the client configuration file"
 }
 

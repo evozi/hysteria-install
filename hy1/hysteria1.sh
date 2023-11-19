@@ -190,7 +190,7 @@ inst_port(){
         fi
     done
 
-    yellow "The port that will be used on the Hysteria server is: $port"
+    green "The port that will be used on the Hysteria server is: $port"
 
     if [[ $protocol == "udp" ]]; then
         inst_jump
@@ -226,10 +226,39 @@ inst_jump(){
     fi
 }
 
+
+inst_verification(){
+    input_verification
+
+    if [[ $encryptionType == 2 ]]; then
+        inst_pwd
+    else
+        inst_obfs
+    fi
+}
+
+input_verification(){
+    green "Select Hysteria verification method:"
+    yellow "Tips: If you use obfuscation encryption, the anti-blocking ability is better and can be identified as unknown UDP traffic, but it will increase the CPU load and cause the peak speed to decrease. If you are pursuing performance and are not blocked, it is not recommended to use Obfs."
+    echo ""
+    echo -e " ${GREEN}1.${PLAIN} Obfuscation (obfs+auth_str) ${YELLOW} (default) ${PLAIN}"
+    echo -e " ${GREEN}2.${PLAIN} Authentication password (auth_str)"
+    echo ""
+    read -rp "Please enter options [1-2]: " encryptionType
+}
+
+inst_obfs(){
+    read -p "Set Hysteria obfuscation password (Enter for random password) :  " obfs_pwd
+    [[ -z $obfs_pwd ]] && obfs_pwd=$(date +%s%N | md5sum | cut -c 1-16)
+    yellow "The obfs password used on the Hysteria server is: $obfs_pwd"
+    auth_pwd=$obfs_pwd
+}
+
 inst_pwd(){
-    read -p "Set Hysteria password (Enter for random password) :  " auth_pwd
-    [[ -z $auth_pwd ]] && auth_pwd=$(date +%s%N | md5sum | cut -c 1-8)
-    yellow "The password used on the Hysteria server is: $auth_pwd"
+    read -p "Set Hysteria authentication password (Enter for random password) :  " auth_pwd
+    [[ -z $auth_pwd ]] && auth_pwd=$(date +%s%N | md5sum | cut -c 1-16)
+    yellow "The auth password used on the Hysteria server is: $auth_pwd"
+    obfs_pwd=""
 }
 
 inst_speed(){
@@ -281,7 +310,7 @@ installHysteria(){
     inst_cert
     inst_protocol
     inst_port
-    inst_pwd
+    inst_verification
     inst_speed
     inst_resolv
 
@@ -294,10 +323,11 @@ installHysteria(){
     "cert": "$cert_path",
     "key": "$key_path",
     "alpn": "h3",
+    "obfs": "$obfs_pwd",
     "auth": {
         "mode": "password",
         "config": {
-            "password": "$auth_pwd"
+            "password": "${auth_pwd}"
         }
     }
 }
@@ -343,6 +373,7 @@ EOF
     "up_mbps": "$up_mbps",
     "down_mbps": "$down_mbps",
     "auth_str": "$auth_pwd",
+    "obfs": "$obfs_pwd",
     "insecure": true,
     "retry": 3,
     "retry_interval": 3,
@@ -376,6 +407,7 @@ proxies:
     server: $hy_host
     port: $port
     auth_str: $auth_pwd
+    obfs: $obfs_pwd
     alpn:
       - h3
     protocol: $protocol
@@ -394,10 +426,12 @@ rules:
   - DOMAIN-SUFFIX,fast.com,DIRECT
   - DOMAIN-SUFFIX,speed.cloudflare.com,DIRECT
   - DOMAIN-SUFFIX,ir,DIRECT
+  - DOMAIN-SUFFIX,cn,DIRECT
   - GEOIP,IR,DIRECT
+  - GEOIP,CN,DIRECT
   - MATCH,Proxy
 EOF
-    url="hysteria://$hy_host:$last_port?protocol=$protocol&upmbps=$up_mbps&downmbps=$down_mbps&auth=$auth_pwd&peer=$sni_host&insecure=1&alpn=h3#HttpInjector-Hysteria1"
+    url="hysteria://$hy_host:$last_port?protocol=$protocol&upmbps=$up_mbps&downmbps=$down_mbps&auth=$auth_pwd&obfsParam=$obfs_pwd&peer=$sni_host&insecure=1&alpn=h3#HttpInjector-Hysteria1"
     echo $url > /root/hy/url.txt
 
     systemctl daemon-reload
@@ -527,14 +561,54 @@ change_port(){
     green "The configuration is modified successfully, please re-import the client configuration file"
 }
 
-change_pwd(){
+change_verification(){
+    input_verification
+
+    if [[ $encryptionType == 2 ]]; then
+        change_pwd
+    else
+        change_obfs
+    fi
+}
+
+change_obfs(){
     old_pwd=$(cat /etc/hysteria/config.json | grep password | sed -n 2p | awk -F " " '{print $2}' | sed "s/\"//g" | sed "s/,//g")
-    inst_pwd
+    inst_obfs
+    sed -i "s/\"obfs\": \"\"/\"obfs\": \"$obfs_pwd\"/" /etc/hysteria/config.json
+    sed -i "s/\"obfs\": \"\"/\"obfs\": \"$obfs_pwd\"/" /root/hy/hy-client.json
+    sed -i "s/obfs: /obfs: $obfs_pwd/" /root/hy/clash-meta.yaml
+    sed -i "s/obfsParam=/obfsParam=$obfs_pwd/" /root/hy/url.txt
+
+    sed -i "s/\"obfs\": \"$old_pwd\"/\"obfs\": \"$obfs_pwd\"/" /etc/hysteria/config.json
+    sed -i "s/\"obfs\": \"$old_pwd\"/\"obfs\": \"$obfs_pwd\"/" /root/hy/hy-client.json
+    sed -i "s/obfs: $old_pwd/obfs: $obfs_pwd/" /root/hy/clash-meta.yaml
+    sed -i "s/obfsParam=$old_pwd/obfsParam=$obfs_pwd/" /root/hy/url.txt
+
     sed -i "s/$old_pwd/$auth_pwd/" /etc/hysteria/config.json
     sed -i "s/$old_pwd/$auth_pwd/" /root/hy/hy-client.json
     sed -i "s/$old_pwd/$auth_pwd/" /root/hy/clash-meta.yaml
     sed -i "s/$old_pwd/$auth_pwd/" /root/hy/url.txt
+
     stopHysteria && startHysteria
+
+    green "The configuration is modified successfully, please re-import the client configuration file"
+}
+
+change_pwd(){
+    old_pwd=$(cat /etc/hysteria/config.json | grep password | sed -n 2p | awk -F " " '{print $2}' | sed "s/\"//g" | sed "s/,//g")
+    inst_pwd
+    sed -i "s/\"obfs\": \"$old_pwd\"/\"obfs\": \"\"/" /etc/hysteria/config.json
+    sed -i "s/\"obfs\": \"$old_pwd\"/\"obfs\": \"\"/" /root/hy/hy-client.json
+    sed -i "s/obfs: $old_pwd/obfs: /" /root/hy/clash-meta.yaml
+    sed -i "s/obfsParam=$old_pwd/obfsParam=/" /root/hy/url.txt
+
+    sed -i "s/$old_pwd/$auth_pwd/" /etc/hysteria/config.json
+    sed -i "s/$old_pwd/$auth_pwd/" /root/hy/hy-client.json
+    sed -i "s/$old_pwd/$auth_pwd/" /root/hy/clash-meta.yaml
+    sed -i "s/$old_pwd/$auth_pwd/" /root/hy/url.txt
+
+    stopHysteria && startHysteria
+
     green "The configuration is modified successfully, please re-import the client configuration file"
 }
 
@@ -551,7 +625,7 @@ changeConf(){
     echo -e " ${GREEN}1.${PLAIN} Modify certificate type"
     echo -e " ${GREEN}2.${PLAIN} Modify the transport protocol"
     echo -e " ${GREEN}3.${PLAIN} Modify connection port"
-    echo -e " ${GREEN}4.${PLAIN} Modify authentication password"
+    echo -e " ${GREEN}4.${PLAIN} Modify verification method (obfs password/auth password)"
     echo -e " ${GREEN}5.${PLAIN} Modify domain name resolution priority"
     echo ""
     read -p " Please select an action [1-5]：" confAnswer
@@ -559,7 +633,7 @@ changeConf(){
         1 ) change_cert ;;
         2 ) change_protocol ;;
         3 ) change_port ;;
-        4 ) change_pwd ;;
+        4 ) change_verification ;;
         5 ) change_resolv ;;
         * ) exit 1 ;;
     esac

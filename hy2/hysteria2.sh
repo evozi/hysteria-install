@@ -202,10 +202,38 @@ inst_jump(){
     fi
 }
 
+inst_verification(){
+    input_verification
+
+    if [[ $encryptionType == 2 ]]; then
+        inst_pwd
+    else
+        inst_obfs
+    fi
+}
+
+input_verification(){
+    green "Select Hysteria verification method:"
+    yellow "Tips: If you use obfuscation encryption, the anti-blocking ability is better and can be identified as unknown UDP traffic, but it will increase the CPU load and cause the peak speed to decrease. If you are pursuing performance and are not blocked, it is not recommended to use Obfs."
+    echo ""
+    echo -e " ${GREEN}1.${PLAIN} Obfuscation (obfs+auth) ${YELLOW} (default) ${PLAIN}"
+    echo -e " ${GREEN}2.${PLAIN} Authentication Password (auth)"
+    echo ""
+    read -rp "Please enter options [1-2]: " encryptionType
+}
+
+inst_obfs(){
+    read -p "Set Hysteria2 obfuscation password (Enter for random password) :  " auth_pwd
+    [[ -z $auth_pwd ]] && auth_pwd=$(date +%s%N | md5sum | cut -c 1-16)
+    yellow "The obfs password used on the Hysteria server is: $auth_pwd"
+    obfs_server_config_key="obfs"
+}
+
 inst_pwd(){
     read -p "Set Hysteria2 password (Enter for random password) :  " auth_pwd
-    [[ -z $auth_pwd ]] && auth_pwd=$(date +%s%N | md5sum | cut -c 1-8)
+    [[ -z $auth_pwd ]] && auth_pwd=$(date +%s%N | md5sum | cut -c 1-16)
     yellow "The password used on the Hysteria2 server is: $auth_pwd"
+    obfs_server_config_key="obfs_disabled"
 }
 
 inst_sni(){
@@ -252,7 +280,7 @@ installHysteria(){
     # Ask user for Hysteria configuration
     inst_cert
     inst_port
-    inst_pwd
+    inst_verification
     inst_site
 
     # Set up the Hysteria configuration file
@@ -263,7 +291,7 @@ tls:
   cert: $cert_path
   key: $key_path
 
-obfs:
+${obfs_server_config_key}:
   type: salamander
   salamander:
     password: $auth_pwd
@@ -309,7 +337,7 @@ tls:
   sni: $hy_host
   insecure: true
 
-obfs: $auth_pwd
+${obfs_server_config_key}: $auth_pwd
 
 quic:
   initStreamReceiveWindow: 16777216
@@ -334,7 +362,7 @@ EOF
     "sni": "$hy_host",
     "insecure": true
   },
-  "obfs": "$auth_pwd",
+  "${obfs_server_config_key}": "$auth_pwd",
   "quic": {
     "initStreamReceiveWindow": 16777216,
     "maxStreamReceiveWindow": 16777216,
@@ -353,9 +381,15 @@ EOF
 }
 EOF
 
-    url="hy2://$auth_pwd@$ip:$last_port/?insecure=1&sni=$hy_host&obfs=salamander&obfs-password=$auth_pwd#HttpInjector-hysteria2"
+    if [[ $obfs_server_config_key == "obfs" ]]; then
+        obfs_uri="obfs=salamander&obfs-password=$auth_pwd"
+    else
+        obfs_uri="obfs=&obfs-password="
+    fi
+
+    url="hy2://$auth_pwd@$ip:$last_port/?insecure=1&sni=$hy_host&$obfs_uri#HttpInjector-hysteria2"
     echo $url > /root/hy/url.txt
-    nohopurl="hy2://$auth_pwd@$ip:$port/?insecure=1&sni=$hy_host&obfs=salamander&obfs-password=$auth_pwd#HttpInjector-hysteria2"
+    nohopurl="hy2://$auth_pwd@$ip:$port/?insecure=1&sni=$hy_host&$obfs_uri#HttpInjector-hysteria2"
     echo $nohopurl > /root/hy/url-nohop.txt
 
     systemctl daemon-reload
@@ -434,6 +468,7 @@ changeport(){
     sed -i "1s#$oldport#$port#g" /root/hy/hy-client.yaml
     sed -i "2s#$oldport#$port#g" /root/hy/hy-client.json
     sed -i "s#$oldport#$port#g" /root/hy/url.txt
+    sed -i "s#$oldport#$port#g" /root/hy/url-nohop.txt
 
     stopHysteria && startHysteria
 
@@ -442,26 +477,82 @@ changeport(){
     cat /root/hy/url.txt
 }
 
-changepasswd(){
+change_verification(){
+    input_verification
+
+    if [[ $encryptionType == 2 ]]; then
+        change_pwd
+    else
+        change_obfs
+    fi
+}
+
+change_obfs(){
     oldpasswd=$(cat /etc/hysteria/config.yaml 2>/dev/null | sed -n 20p | awk '{print $2}')
     oldobfs=$(cat /etc/hysteria/config.yaml 2>/dev/null | sed -n 10p | awk '{print $2}')
 
-    read -p "Set Hysteria 2 password (carriage return is skipped for random characters): " passwd
-    [[ -z $passwd ]] && passwd=$(date +%s%N | md5sum | cut -c 1-8)
+    inst_obfs
 
-    sed -i "20s#$oldpasswd#$passwd#g" /etc/hysteria/config.yaml
-    sed -i "10s#$oldobfs#$passwd#g" /etc/hysteria/config.yaml
-    sed -i "3s#$oldpasswd#$passwd#g" /root/hy/hy-client.yaml
-    sed -i "9s#$oldobfs#$passwd#g" /root/hy/hy-client.yaml
-    sed -i "3s#$oldpasswd#$passwd#g" /root/hy/hy-client.json
-    sed -i "8s#$oldobfs#$passwd#g" /root/hy/hy-client.json
-    sed -i "s#$oldpasswd#$passwd#g" /root/hy/url.txt
-    sed -i "s#$oldobfs#$passwd#g" /root/hy/url.txt
+    sed -i "s/obfs_disabled:/obfs:/" /etc/hysteria/config.yaml
+    sed -i "s/obfs_disabled:/obfs:/" /root/hy/hy-client.yaml
+    sed -i "s/\"obfs_disabled\":/\"obfs\":/" /root/hy/hy-client.json
     
+    sed -i "s/\&obfs=\&/\&obfs=salamander\&/" /root/hy/url.txt
+    sed -i "s/obfs-password=\#/obfs-password=$auth_pwd\#/" /root/hy/url.txt
+    sed -i "s/obfs-password=$oldobfs/obfs-password=$auth_pwd/" /root/hy/url.txt
+
+    sed -i "s/obfs=/obfs=salamander/" /root/hy/url-nohop.txt
+    sed -i "s/obfs-password=\#/obfs-password=$auth_pwd\#/" /root/hy/url-nohop.txt
+    sed -i "s/obfs-password=$oldobfs/obfs-password=$auth_pwd/" /root/hy/url-nohop.txt
+
+    sed -i "20s#$oldpasswd#$auth_pwd#g" /etc/hysteria/config.yaml
+    sed -i "10s#$oldobfs#$auth_pwd#g" /etc/hysteria/config.yaml
+    sed -i "3s#$oldpasswd#$auth_pwd#g" /root/hy/hy-client.yaml
+    sed -i "9s#$oldobfs#$auth_pwd#g" /root/hy/hy-client.yaml
+    sed -i "3s#$oldpasswd#$auth_pwd#g" /root/hy/hy-client.json
+    sed -i "8s#$oldobfs#$auth_pwd#g" /root/hy/hy-client.json
+    sed -i "s#$oldpasswd#$auth_pwd#g" /root/hy/url.txt
+    sed -i "s#$oldobfs#$auth_pwd#g" /root/hy/url.txt
+    sed -i "s#$oldpasswd#$auth_pwd#g" /root/hy/url-nohop.txt
+    sed -i "s#$oldobfs#$auth_pwd#g" /root/hy/url-nohop.txt
 
     stopHysteria && startHysteria
 
-    green "Hysteria 2 server password successfully changed to: $passwd"
+    green "Hysteria 2 server password successfully changed to: $auth_pwd"
+    yellow "Please manually update the client configuration"
+    cat /root/hy/url.txt
+}
+
+change_pwd(){
+    oldpasswd=$(cat /etc/hysteria/config.yaml 2>/dev/null | sed -n 20p | awk '{print $2}')
+    oldobfs=$(cat /etc/hysteria/config.yaml 2>/dev/null | sed -n 10p | awk '{print $2}')
+
+    inst_pwd
+
+    sed -i "s/obfs:/obfs_disabled:/" /etc/hysteria/config.yaml
+    sed -i "s/obfs:/obfs_disabled:/" /root/hy/hy-client.yaml
+    sed -i "s/\"obfs\":/\"obfs_disabled\":/" /root/hy/hy-client.json
+
+    sed -i "s/obfs=salamander/obfs=/" /root/hy/url.txt
+    sed -i "s/obfs-password=$oldobfs/obfs-password=/" /root/hy/url.txt
+
+    sed -i "s/obfs=salamander/obfs=/" /root/hy/url-nohop.txt
+    sed -i "s/obfs-password=$oldobfs/obfs-password=/" /root/hy/url-nohop.txt
+
+    sed -i "20s#$oldpasswd#$auth_pwd#g" /etc/hysteria/config.yaml
+    sed -i "10s#$oldobfs#$auth_pwd#g" /etc/hysteria/config.yaml
+    sed -i "3s#$oldpasswd#$auth_pwd#g" /root/hy/hy-client.yaml
+    sed -i "9s#$oldobfs#$auth_pwd#g" /root/hy/hy-client.yaml
+    sed -i "3s#$oldpasswd#$auth_pwd#g" /root/hy/hy-client.json
+    sed -i "8s#$oldobfs#$auth_pwd#g" /root/hy/hy-client.json
+    sed -i "s#$oldpasswd#$auth_pwd#g" /root/hy/url.txt
+    sed -i "s#$oldobfs#$auth_pwd#g" /root/hy/url.txt
+    sed -i "s#$oldpasswd#$auth_pwd#g" /root/hy/url-nohop.txt
+    sed -i "s#$oldobfs#$auth_pwd#g" /root/hy/url-nohop.txt
+
+    stopHysteria && startHysteria
+
+    green "Hysteria 2 server password successfully changed to: $auth_pwd"
     yellow "Please manually update the client configuration"
     cat /root/hy/url.txt
 }
@@ -501,14 +592,14 @@ changeproxysite(){
 changeConf(){
     green "The Hysteria 2 configuration change options are as follows:"
     echo -e " ${GREEN}1.${PLAIN} Change Port"
-    echo -e " ${GREEN}2.${PLAIN} Change Password"
+    echo -e " ${GREEN}2.${PLAIN} Change Verification Method (obfs password/auth password)"
     echo -e " ${GREEN}3.${PLAIN} Change Certificate Type"
     echo -e " ${GREEN}4.${PLAIN} Change Masquerade Website"
     echo ""
     read -p " Please enter options [1-4]：" confAnswer
     case $confAnswer in
         1 ) changeport ;;
-        2 ) changepasswd ;;
+        2 ) change_verification ;;
         3 ) change_cert ;;
         4 ) changeproxysite ;;
         * ) exit 1 ;;

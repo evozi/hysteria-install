@@ -159,8 +159,6 @@ inst_cert(){
 }
 
 inst_port(){
-    iptables -t nat -F PREROUTING >/dev/null 2>&1
-
     read -p "Set the Hysteria2 port [1-65535] (Enter will randomly assign the port): " port
     [[ -z $port ]] && port=$(shuf -i 2000-65535 -n 1)
     until [[ -z $(ss -tunlp | grep -w udp | awk '{print $5}' | sed 's/.*://g' | grep -w "$port") ]]; do
@@ -171,8 +169,18 @@ inst_port(){
         fi
     done
 
+    delPortHoppingNat
+
     yellow "The port that will be used on the Hysteria2 server is: $port"
     inst_jump
+}
+
+delPortHoppingNat(){
+    iptables -t nat -F PREROUTING  2>/dev/null
+    ip6tables -t nat -F PREROUTING  2>/dev/null
+    if systemctl status netfilter-persistent 2>/dev/null | grep -q "active (exited)"; then
+        netfilter-persistent save 2> /dev/null
+    fi
 }
 
 inst_jump(){
@@ -185,6 +193,10 @@ inst_jump(){
     if [[ $jumpInput == 2 ]]; then
         read -p "Set the starting port of the range port (recommended between 10000-65535)：" firstport
         read -p "Set the end port of a range port (recommended between 10000-65535, must be larger than the start port above)：" endport
+        
+        firstport="${firstport:=10000}"
+        endport="${endport:=65535}"
+
         if [[ $firstport -ge $endport ]]; then
             until [[ $firstport -le $endport ]]; do
                 if [[ $firstport -ge $endport ]]; then
@@ -194,9 +206,14 @@ inst_jump(){
                 fi
             done
         fi
-        iptables -t nat -A PREROUTING -p udp --dport $firstport:$endport  -j DNAT --to-destination :$port
-        ip6tables -t nat -A PREROUTING -p udp --dport $firstport:$endport  -j DNAT --to-destination :$port
-        netfilter-persistent save >/dev/null 2>&1
+        delPortHoppingNat
+        iptables -t nat -A PREROUTING -p udp --dport $firstport:$endport -m comment --comment "NAT $firstport:$endport to $port (PortHopping-hysteria)" -j DNAT --to-destination :$port
+        ip6tables -t nat -A PREROUTING -p udp --dport $firstport:$endport -m comment --comment "NAT $firstport:$endport to $port (PortHopping-hysteria)" -j DNAT --to-destination :$port
+        if systemctl status netfilter-persistent 2>/dev/null | grep -q "active (exited)"; then
+            netfilter-persistent save >/dev/null 2>&1
+        else 
+            red "netfilter-persistent not enabled, PortHopping forwarding rules cannot be persisted and will fail after restarting the system. Please manually execute netfilter-persistent save. Continuing to execute the script will not affect subsequent configurations..."
+        fi
     else
         red "will continue to use single port mode"
     fi
@@ -418,8 +435,7 @@ uninstallHysteria(){
     systemctl disable hysteria-server.service >/dev/null 2>&1
     rm -f /lib/systemd/system/hysteria-server.service /lib/systemd/system/hysteria-server@.service
     rm -rf /usr/local/bin/hysteria /etc/hysteria /root/hy /root/hysteria2.sh
-    iptables -t nat -F PREROUTING >/dev/null 2>&1
-    netfilter-persistent save >/dev/null 2>&1
+    delPortHoppingNat
 
     green "Hysteria 2 has been completely uninstalled!  "
 }

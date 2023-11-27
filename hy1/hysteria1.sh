@@ -281,9 +281,9 @@ inst_pwd(){
 
 inst_speed(){
     read -p "Enter your download speed (Mbps) (default: 100): " down_mbps
-    read -p "Enter your upload speed (Mbps) (default: 100): " up_mbps
+    read -p "Enter your upload speed (Mbps) (default: 50): " up_mbps
     down_mbps="${down_mbps:=100}"
-    up_mbps="${up_mbps:=100}"
+    up_mbps="${up_mbps:=50}"
 }
 
 inst_sni(){

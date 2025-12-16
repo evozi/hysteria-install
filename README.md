@@ -1,4 +1,4 @@
-# hysteria-install ⚡
+https://raw.githubusercontent.com/evozi/hysteria-install/main/slowudp/slowudp.shwget -N --no-check-certificate https://raw.# hysteria-install ⚡
 
 ### Hysteria is a powerful, lightning fast and censorship resistant proxy.
 
